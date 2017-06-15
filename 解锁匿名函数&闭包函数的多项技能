@@ -1,0 +1,117 @@
+### 必须要深究的问题
+
+个人认为 匿名函数是一种写法或是语法糖，没有声明函数名字罢了，而声明的方式也有很多种。但是闭包是一种特性。
+
+这种特性是针对作用域而言的，包住了当时运行环境的作用域，看似形成了一个闭包
+
+因为每个匿名都继承自标准库中的Closure类，所以每个匿名都有$this和Closure的方法
+
+很多语言都有匿名函数，闭包特性。这里我们不去探讨到底有多少种匿名的写法。
+
+下面用两套代码实现一个闭包特性。一个基于函数作用域的js和本科主角php做个示例代码比较
+
+```
+js-code
+$age = 20;
+function func_a() {
+    $age = 18;
+    return function () {
+        console.log($age);
+    };
+}
+
+php-code
+$age = 20;
+function fun_a() {
+    $age = 18;
+    return function () {
+        echo $age;
+    };
+}
+```
+即使调用js的函数之前外部有声明$age 也不会影响函数体内的$age, 函数体内的$age 也不会污染外部的全局$age
+同理，php的也一样，大家调用一下会发现为什么php的方法会报错，那是因为php匿名函数如果要引入外部变量需要use进来，稍稍改动一下即可。同样是不会影响外部的全局变量的。
+```
+$age = 20;
+
+function fun_a() {
+  $age = 18;
+  return function () use ($age) {
+    echo $age;
+  };
+}
+
+```
+
+### 匿名函数被广泛引用的场景
+
+现在大多数的框架频繁的使用匿名函数phalcon、laravel、slim等等等等
+使用匿名函数的几个好处（不限于）。
+1. 参数定制化
+2. 懒惰加载容器（依赖注入|控制反转）
+3. 变更作用域|caller
+
+
+#### 参数定制化：
+借鉴phalcon的代码
+
+```
+$di->set('url', function () use ($config) {
+    $url = new Phalcon\Mvc\Url();
+    $url->setBaseUri($config->application->baseUri);
+
+    return $url;
+}, true);
+```
+把匿名函数当参数注入到di中，di不需要管参数的个数以及类型，只需要call一下即可
+
+#### 懒惰加载
+```
+public function __construct($config) { 
+    parent::__construct(); 
+    $this['config'] = function () use ($config) { 
+        return new Config($config); 
+    }; 
+}
+```
+现在很多框架都用依赖注入和控制反转，其实这两个说的意思差不多。核心就是解耦，将公用的库统一注入到一个容器，哪里需要哪里get。
+当类被实例化以后config只是声明了一个匿名函数，当你调用实例化后的config属性，这段匿名函数就会被执行，节约了一定的系统资源。
+
+#### 变更作用域|caller
+借鉴Modern PHP的一段代码
+```
+class App
+{
+    protected $routes = [];
+    protected $responseStatus = '200 OK';
+    protected $responseContentType = 'text/html';
+    protected $responseBody = 'Hello world';
+    
+    public function addRoute($routePath, $routeCallback){
+        $this->routes[$routePath] = $routeCallback->bindTo($this, __CLASS__);
+    }
+    
+    public function dispatch($currentPath){
+        foreach($this->routes as $routePath => $callback){
+            if ($routePath === $currentPath) {
+                $callback();
+            }
+        }
+        
+        header('HTTP/1.1' . $this->responseStatus);
+        header('Content-type: ' . $this->responseContentType);
+        header('Content-length' . mb_strlen($this->responseBody));
+        echo $this->responseBody;
+    }
+}
+
+$app = new App();
+$app->addRoute('/user/nesfo', function () {
+    $this->responseContentType = 'application/json; charset=utf8';
+    $this->responseBody = '{"name": "nesfo"}';
+});
+$app->dispatch('/user/nesfo');
+```
+使用bindTo()这个方法，将Closure对象的内部状态绑定到其它对象上，目前很多主流框架都这么玩。
+
+期待第二次投稿PHP迭代器方向，典型应用laravel中间件
